@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: horse-racing
+  namespace: forekto
+  labels:
+    app.kubernetes.io/name: horse-racing
+    app.kubernetes.io/part-of: forekto
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: horse-racing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: horse-racing
+    spec:
+      containers:
+        - name: horse-racing
+          # On EKS this is the ECR image; locally, kind loads this exact tag.
+          image: forekto-horse-racing:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # Liveness: is the process alive? If it wedges, restart the pod.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Readiness: is the model loaded and servable? No traffic until 200.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5

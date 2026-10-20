@@ -1,0 +1,8 @@
+# kind (Kubernetes-in-Docker) cluster for a free local demo.
+# Single node is plenty for this demo. The app is reached with
+# `kubectl port-forward` (see DEMO.md), which works the same on every OS.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: forekto
+nodes:
+  - role: control-plane

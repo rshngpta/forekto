@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Data & model artifacts (regenerate with make sample-data / make train)
+modules/*/data/*.csv
+modules/*/model/*.pkl
+modules/*/model/metadata.json
+
+# Env / secrets
+.env
+*.tfvars
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

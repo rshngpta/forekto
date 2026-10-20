@@ -1,0 +1,68 @@
+name: CD
+
+# Builds the image, pushes it to Amazon ECR, and deploys to EKS.
+# Manual trigger by default (so it never runs red before AWS is provisioned).
+# Switch to the `push` trigger below once your cluster exists.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "modules/horse-racing/**"
+
+# Required for GitHub OIDC -> AWS IAM role (no long-lived AWS keys).
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: forekto-horse-racing
+  EKS_CLUSTER: forekto
+  K8S_NAMESPACE: forekto
+
+defaults:
+  run:
+    working-directory: modules/horse-racing
+
+jobs:
+  deploy:
+    name: Build, push, deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          pip install -r requirements.txt
+          python ml/make_sample_data.py
+          python ml/train.py
+          docker build -t "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+
+      - name: Deploy to EKS
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          kubectl -n "$K8S_NAMESPACE" set image \
+            deployment/horse-racing \
+            horse-racing="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          kubectl -n "$K8S_NAMESPACE" rollout status deployment/horse-racing --timeout=120s

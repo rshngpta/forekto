@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forekto — Accuracy Dashboard</title>
+  <style>
+    :root{
+      --bg:#f4f6f9; --panel:#fff; --panel-2:#f8fafc; --line:#e1e7ef;
+      --text:#15202b; --muted:#687787; --green:#1a9b55; --green-d:#127a42;
+      --red:#c0392b; --gold:#c8911a; --radius:12px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+    .top{background:var(--green-d);color:#fff;padding:16px 24px;display:flex;align-items:center;gap:12px}
+    .top h1{margin:0;font-size:22px}
+    .top .pill{font-size:11px;background:rgba(255,255,255,.2);padding:4px 11px;border-radius:999px;text-transform:uppercase;letter-spacing:1px}
+    .top a{margin-left:auto;color:#fff;text-decoration:none;font-size:14px;border:1px solid rgba(255,255,255,.4);padding:6px 14px;border-radius:999px}
+    .wrap{max-width:1120px;margin:0 auto;padding:22px 24px 48px;display:flex;flex-direction:column;gap:20px}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+    @media(max-width:760px){.kpis{grid-template-columns:1fr 1fr}}
+    .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+    .kpi .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+    .kpi .val{font-size:30px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
+    .kpi .sub{font-size:12px;color:var(--muted);margin-top:4px}
+    .kpi.good .val{color:var(--green-d)} .kpi.warn .val{color:var(--gold)}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+    .card h2{margin:0 0 14px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 8px;text-align:left;border-bottom:1px solid var(--line);font-size:14px}
+    th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
+    /* FIX 1: numeric headers right-align to match their columns */
+    th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+    .tick{color:var(--green-d);font-weight:700}
+    .cross{color:var(--red);font-weight:700}
+    .bar{height:9px;background:#eef1f5;border-radius:999px;overflow:hidden;min-width:120px}
+    .bar>i{display:block;height:100%;background:var(--green)}
+    .muted{color:var(--muted);font-size:13px}
+    .note{color:var(--muted);font-size:12px;margin-top:8px}
+    .empty{color:var(--muted);padding:20px 0}
+    /* FIX 2: inline record-winner control */
+    .rec{display:flex;gap:6px;align-items:center}
+    .rec input{border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:13px;width:130px}
+    .rec button{border:none;background:var(--green);color:#fff;border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer}
+    .rec button:hover{background:var(--green-d)}
+  </style>
+</head>
+<body>
+  <div class="top"><h1>Forekto</h1><span class="pill">Accuracy Dashboard</span><a href="/">← Predictor</a></div>
+  <div class="wrap">
+    <div class="kpis" id="kpis"></div>
+
+    <section class="card">
+      <h2>Model vs favourite — out-of-sample</h2>
+      <div id="compare" class="muted">Loading…</div>
+      <div class="note">Top-1 hit rate = how often the top-ranked pick actually won. "Favourite" = always backing the lowest-odds option (the market baseline).</div>
+    </section>
+
+    <section class="card">
+      <h2>Accuracy by week</h2>
+      <div id="weekly"><div class="empty">No resolved predictions yet.</div></div>
+    </section>
+
+    <section class="card">
+      <h2>Calibration — are the probabilities honest?</h2>
+      <div id="calib"><div class="empty">No resolved predictions yet.</div></div>
+      <div class="note">When the model says the top pick has, e.g., a 40% chance, does it win about 40% of the time? Closer match = better-calibrated probabilities.</div>
+    </section>
+
+    <section class="card">
+      <h2>Recent predictions</h2>
+      <div id="recent"><div class="empty">No predictions yet.</div></div>
+      <div class="note">Pending rows can be resolved here — type the actual winner and save (no terminal needed).</div>
+    </section>
+  </div>
+
+  <script>
+    const pct = v => v == null ? "—" : (v*100).toFixed(1) + "%";
+
+    async function recordOutcome(id, inputId){
+      const v = document.getElementById(inputId).value.trim();
+      if(!v){ return; }
+      await fetch("/api/outcome/" + id, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({actual_winner: v})
+      });
+      load();
+    }
+    window.recordOutcome = recordOutcome;
+
+    async function load(){
+      const m = await (await fetch("/api/metrics")).json();
+      const recent = (await (await fetch("/api/predictions?limit=15")).json()).predictions;
+
+      document.getElementById("kpis").innerHTML = `
+        <div class="kpi"><div class="label">Predictions</div><div class="val">${m.total_predictions}</div><div class="sub">${m.resolved} resolved · ${m.pending} pending</div></div>
+        <div class="kpi good"><div class="label">Model hit rate</div><div class="val">${pct(m.model_hit_rate)}</div><div class="sub">top pick was right</div></div>
+        <div class="kpi"><div class="label">Favourite baseline</div><div class="val">${pct(m.favourite_hit_rate)}</div><div class="sub">lowest-odds pick</div></div>
+        <div class="kpi ${(m.model_vs_favourite||0)>=0?'good':'warn'}"><div class="label">Model − favourite</div><div class="val">${m.model_vs_favourite==null?'—':((m.model_vs_favourite>=0?'+':'')+(m.model_vs_favourite*100).toFixed(1)+' pts')}</div><div class="sub">edge over the market</div></div>`;
+
+      document.getElementById("compare").innerHTML = m.resolved
+        ? `On <strong>${m.resolved}</strong> out-of-sample events, the model's top pick was right <strong>${pct(m.model_hit_rate)}</strong> of the time vs <strong>${pct(m.favourite_hit_rate)}</strong> for always backing the favourite.`
+        : `No resolved predictions yet — run the seed script or record outcomes to populate this.`;
+
+      if(m.accuracy_by_week.length){
+        document.getElementById("weekly").innerHTML =
+          `<table><thead><tr><th>Week</th><th class="num">Events</th><th class="num">Hit rate</th><th></th></tr></thead><tbody>` +
+          m.accuracy_by_week.map(w=>`<tr><td>${w.week}</td><td class="num">${w.n}</td><td class="num">${pct(w.hit_rate)}</td>
+            <td><div class="bar"><i style="width:${(w.hit_rate*100).toFixed(0)}%"></i></div></td></tr>`).join("") +
+          `</tbody></table>`;
+      }
+
+      if(m.calibration.length){
+        document.getElementById("calib").innerHTML =
+          `<table><thead><tr><th>Predicted win prob</th><th class="num">Events</th><th class="num">Avg predicted</th><th class="num">Actually won</th></tr></thead><tbody>` +
+          m.calibration.map(c=>`<tr><td>${c.range}</td><td class="num">${c.n}</td><td class="num">${pct(c.avg_predicted)}</td><td class="num">${pct(c.observed)}</td></tr>`).join("") +
+          `</tbody></table>`;
+      }
+
+      if(recent.length){
+        document.getElementById("recent").innerHTML =
+          `<table><thead><tr><th>#</th><th>Predicted</th><th class="num">Prob</th><th>Actual</th><th>Result</th></tr></thead><tbody>` +
+          recent.map(r=>{
+            const resultCell = r.is_correct==null
+              ? `<div class="rec"><input id="rec-${r.id}" placeholder="actual winner"/><button onclick="recordOutcome(${r.id},'rec-${r.id}')">Save</button></div>`
+              : (r.is_correct?'<span class="tick">✓ hit</span>':'<span class="cross">✗ miss</span>');
+            return `<tr>
+              <td>${r.id}</td>
+              <td>${r.predicted_winner}</td>
+              <td class="num">${pct(r.predicted_winner_prob)}</td>
+              <td>${r.actual_winner || '<span class="muted">pending</span>'}</td>
+              <td>${resultCell}</td>
+            </tr>`;
+          }).join("") +
+          `</tbody></table>`;
+      }
+    }
+    load().catch(e=>{document.getElementById("compare").textContent="Could not load metrics: "+e.message;});
+  </script>
+</body>
+</html>

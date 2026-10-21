@@ -1,128 +1,121 @@
 # Forekto
 
 A multi-sport **prediction & analytics platform**, built as a production-style
-MLOps project. The first module is a **horse-race win predictor**: it scores a
-race's field with a machine-learning model and returns a ranked set of win
-probabilities, served over a Flask API and deployed on Kubernetes.
+MLOps project. Two independent ML services — a **horse-race win predictor** and
+a **football 1X2 predictor** — sit behind a **gateway** that gives users one
+site with a sport switch. Every prediction is stored and scored on an honest,
+out-of-sample **accuracy dashboard**.
 
-The project demonstrates a full path from model to running service —
-containerisation, Kubernetes, Infrastructure-as-Code and CI/CD — using the same
-tools a platform team would use in production.
-
----
-
-## Tech stack
-
-| Layer | Technology |
-| --- | --- |
-| Model | scikit-learn — `RandomForestClassifier` |
-| API | Flask + gunicorn (Python 3.12) |
-| Container | Docker (multi-stage, non-root) |
-| Orchestration | Kubernetes (Deployment, Service, HPA, health probes) |
-| Infrastructure as Code | Terraform (AWS VPC, EKS, ECR) |
-| CI/CD | GitHub Actions (flake8, pytest, Docker build, Trivy scan) |
-| Registry | Amazon ECR |
+The project demonstrates the full path from model to running service:
+containerisation, Kubernetes, Infrastructure-as-Code, CI/CD, a database, and a
+microservices gateway.
 
 ---
 
 ## Architecture
 
 ```
-Client ──▶ Kubernetes Service ──▶ Pod (gunicorn → Flask)
-                                     │
-                                     ├─ features.py  (raw race → feature vector)
-                                     └─ model.py     (RandomForest → win probability)
-                                     ▼
-                         Ranked field returned as JSON / HTML
+                      Browser
+                         │
+                 Gateway (:8000)                  ← one page, sport switch
+                 /api/horse/*   /api/football/*     + combined dashboard
+                    │                │
+     horse-racing (:8080)     football (:8081)     ← independent ML services
+          │                        │
+          └──────── shared ────────┘
+              PostgreSQL / SQLite                  ← stored predictions + outcomes
 ```
 
-The same `features.py` is imported by **both** the training script and the live
-app, so the features the model learns on and predicts on are identical by
-construction — this designs out **training/serving skew**.
+Each sport is its own containerised service. The gateway proxies to the right
+backend, so adding a sport is: add a module, add one line to the gateway's
+backend map.
 
----
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Models | scikit-learn — RandomForest (binary win / 3-class 1X2) |
+| API | Flask + gunicorn (Python 3.12) |
+| Gateway | Flask reverse proxy (sport switch + API routing) |
+| Database | SQLAlchemy — SQLite (local) / PostgreSQL (prod) |
+| Container | Docker (multi-stage, non-root) |
+| Orchestration | Kubernetes (Deployment, Service, HPA, health probes) |
+| Infrastructure as Code | Terraform (AWS VPC, EKS, ECR) |
+| CI/CD | GitHub Actions (flake8, pytest, Docker build, Trivy scan) |
 
 ## The ML
 
-- **Data:** the public Hong Kong racing dataset (`races.csv` + `runs.csv`),
-  joined on `race_id`.
-- **Target:** `won` (1 = winner) — a binary classification problem.
-- **Imbalance:** only ~8% of runners win, so training uses
-  `class_weight="balanced"` and evaluation reports **PR-AUC**, **ROC-AUC** and a
-  race-level **top-1 hit rate** (plus favourite and random baselines) rather
-  than accuracy.
-- **No leakage:** train/test split is done by whole races (`GroupShuffleSplit`),
-  so no race appears in both sets.
-- **Reproducible:** `ml/train.py` retrains from the CSVs and writes
-  `model/horse_rf.pkl` + `model/metadata.json`.
-
----
+- **Horse racing** — predicts each runner's win probability, ranks the field.
+  Target `won` (~8% winners), so it reports PR-AUC, ROC-AUC and a race-level
+  top-1 hit rate vs the market favourite, split by whole races to avoid leakage.
+- **Football** — predicts the 1X2 outcome (Home / Draw / Away) from form, rank
+  and odds. 3-class model; reports accuracy, log loss and top-1 hit rate vs the
+  favourite, with a time-based split.
+- Both produce a **ranked set of outcomes with calibrated probabilities**, so
+  they share one database and one accuracy dashboard.
+- Each module's `features.py` is imported by both training and serving — no
+  training/serving skew.
 
 ## Repository layout
 
 ```
-modules/horse-racing/     the first sport module
-  app/        Flask app + model serving (features.py, model.py, main.py, wsgi.py)
-  ml/         training + sample-data scripts
-  tests/      unit + API tests
-  Dockerfile  multi-stage, non-root image
-infra/
-  terraform/  AWS design — VPC, EKS, ECR (written & validated, not applied)
-  k8s/        Namespace, Deployment, Service, HPA, probes
-  local/      kind cluster config for a free local demo
-  DEMO.md     zero-cost local Kubernetes walkthrough
-.github/workflows/  CI (ci.yaml) and CD (cd.yaml)
+modules/horse-racing/   ML module: win predictor (Flask + model + tests)
+modules/football/       ML module: 1X2 predictor (same shape)
+platform/gateway/       unified page + API proxy to both services
+infra/terraform/        AWS design — VPC, EKS, ECR (written & validated)
+infra/k8s/              horse-racing Kubernetes manifests
+infra/k8s-football/     football manifests
+infra/k8s-gateway/      gateway manifest
+infra/local/            kind config; DEMO.md — zero-cost local K8s
+.github/workflows/      CI (ci.yaml) and CD (cd.yaml)
 ```
 
----
-
-## Run it locally
+## Run it locally (3 terminals)
 
 ```bash
-cd modules/horse-racing
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-make sample-data    # or drop the real Kaggle races.csv + runs.csv into data/
-make train          # trains the model, prints metrics
-make test           # 9 tests
-make run            # http://localhost:8080
+# 1 — horse racing
+cd modules/horse-racing && pip install -r requirements.txt
+make sample-data && make train && make seed && python -m app.main   # :8080
+
+# 2 — football
+cd modules/football && pip install -r requirements.txt
+make sample-data && make train && make seed && python -m app.main   # :8081
+
+# 3 — gateway
+cd platform/gateway && pip install -r requirements.txt && python -m app.main   # :8000
 ```
 
-### Run on Kubernetes (free, local)
+Open **http://localhost:8000** — switch sports at the top, predict, and view the
+shared accuracy dashboard at **/dashboard**.
 
-Using Docker Desktop's built-in Kubernetes (or kind — see `infra/DEMO.md`):
+## Run on Kubernetes (free, local)
+
+Docker Desktop's built-in Kubernetes (or kind — see `infra/DEMO.md`):
 
 ```bash
 docker build -t forekto-horse-racing:local modules/horse-racing
+docker build -t forekto-football:local modules/football
+docker build -t forekto-gateway:local platform/gateway
 kubectl apply -k infra/k8s
+kubectl apply -f infra/k8s-football/football.yaml
+kubectl apply -f infra/k8s-gateway/gateway.yaml
 kubectl -n forekto get pods
-kubectl -n forekto port-forward svc/horse-racing 8090:80   # http://localhost:8090
+kubectl -n forekto port-forward svc/gateway 8000:80   # http://localhost:8000
 ```
 
----
+## CI/CD & Infrastructure
 
-## CI/CD
-
-- **CI** (`ci.yaml`) runs on every push/PR: flake8 → pytest → Docker build →
-  Trivy image scan.
-- **CD** (`cd.yaml`) builds, pushes to ECR and deploys to EKS, authenticating
-  via **GitHub OIDC** (no long-lived AWS keys). Manual trigger until a cluster
-  exists.
-
-## Infrastructure
-
-The AWS infrastructure is fully written as Terraform (VPC with public/private
-subnets, EKS cluster + managed node group, ECR) and validates cleanly. A live
-cluster is **not** stood up, because EKS bills real money and this is a personal
-project — the identical Kubernetes manifests are demonstrated on a **local
-cluster** instead. See `infra/DEMO.md`.
-
----
+- **CI** runs on every push: flake8 → pytest → Docker build → Trivy scan.
+- **CD** builds, pushes to ECR and deploys to EKS via GitHub OIDC (no stored
+  keys); manual until a cluster exists.
+- The AWS Terraform is fully written and validates cleanly. A live cluster is
+  **not** stood up (EKS costs money); the identical manifests are demonstrated
+  on a local cluster instead. See `infra/DEMO.md`.
 
 ## Notes
 
-- `data/*.csv` and `model/*.pkl` are gitignored (dataset licensing + file size);
-  CI regenerates a model from synthetic data.
+- `data/*.csv`, `model/*.pkl` and local `*.db` files are gitignored; CI
+  regenerates a model from synthetic data.
 - Predictions are a machine-learning demonstration, **not betting advice**.
 
 ## Roadmap
@@ -130,5 +123,7 @@ cluster** instead. See `infra/DEMO.md`.
 - [x] Horse-racing ML module + web UI
 - [x] Docker + CI/CD pipeline
 - [x] Terraform + Kubernetes, running locally
-- [ ] Platform shell: API gateway, Postgres, accuracy dashboard, accounts
-- [ ] Second sport (football) + observability
+- [x] Database + honest accuracy dashboard
+- [x] Second sport (football)
+- [x] Gateway — one site, sport switch, API routing
+- [ ] User accounts · observability · public API

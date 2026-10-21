@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forekto — Predictions</title>
+  <style>
+    :root{
+      --bg:#f4f6f9; --panel:#fff; --panel-2:#f8fafc; --line:#e1e7ef;
+      --text:#15202b; --muted:#687787; --green:#1a9b55; --green-d:#127a42;
+      --home:#1a9b55; --draw:#687787; --away:#185fa5; --gold:#c8911a; --radius:12px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+    .top{background:var(--green-d);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px}
+    .top h1{margin:0;font-size:22px}
+    /* Sport switch */
+    .switch{display:flex;background:rgba(255,255,255,.15);border-radius:999px;padding:3px}
+    .switch button{border:none;background:transparent;color:#fff;padding:7px 18px;border-radius:999px;
+      font-size:14px;font-weight:600;cursor:pointer;opacity:.8}
+    .switch button.active{background:#fff;color:var(--green-d);opacity:1}
+    .top a{margin-left:auto;color:#fff;text-decoration:none;font-size:14px;border:1px solid rgba(255,255,255,.4);padding:6px 14px;border-radius:999px}
+    .wrap{max-width:1120px;margin:0 auto;padding:18px 24px 48px;display:flex;flex-direction:column;gap:20px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:0 1px 2px rgba(20,32,43,.04)}
+    .card h2{margin:0 0 16px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+    label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}
+    input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fff;color:var(--text);outline:none}
+    input:focus,select:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,155,85,.12)}
+    .race-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:560px;margin-bottom:22px}
+    .btn{background:var(--green);color:#fff;border:none;border-radius:10px;padding:12px 22px;font-weight:600;font-size:15px;cursor:pointer;margin-top:16px}
+    .btn:hover{background:var(--green-d)}
+    .btn.secondary{background:#fff;border:1px solid var(--line);color:var(--text)}
+    .actions{display:flex;gap:12px;align-items:center;margin-top:16px}
+    .count{color:var(--muted);font-size:13px;margin-left:auto}
+    .status{font-size:13px;color:var(--muted);margin-top:12px;min-height:18px}
+    .error{color:#c0392b}
+    .hidden{display:none}
+
+    /* horse runners */
+    .runner-head,.runner{display:grid;
+      grid-template-columns:minmax(150px,1.8fr) 68px 92px 60px 78px minmax(96px,1fr) minmax(96px,1fr) 40px;
+      gap:10px;align-items:center}
+    .runner-table{overflow-x:auto}.runner-inner{min-width:760px}
+    .runner-head{padding:0 0 8px}.runner-head span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+    .runner{padding:8px 0;border-top:1px solid var(--line)}
+    .remove{background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:8px 0;font-size:15px;cursor:pointer}
+
+    /* football match */
+    .teams{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:end;margin-bottom:12px}
+    .vs{color:var(--muted);font-weight:700;padding-bottom:9px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px}
+    .sec-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px}
+
+    /* results */
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:12px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:14px}
+    th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
+    .rank{width:30px;font-weight:700;color:var(--muted)}
+    tr.win td{background:#eef7f1}tr.win .rank{color:var(--green-d)}
+    .badge{font-size:10px;color:var(--green-d);border:1px solid var(--green);border-radius:999px;padding:1px 8px;margin-left:8px}
+    .pbar{display:flex;align-items:center;gap:10px;min-width:200px}
+    .track{flex:1;height:9px;background:#eef1f5;border-radius:999px;overflow:hidden}
+    .track>i{display:block;height:100%;background:var(--green)}
+    .pv{width:52px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+    .empty{color:var(--muted);font-size:14px;padding:20px 4px}
+    .foot{color:var(--muted);font-size:12px;margin-top:14px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h1>Forekto</h1>
+    <div class="switch">
+      <button id="sw-horse" class="active" onclick="setSport('horse')">🏇 Horse Racing</button>
+      <button id="sw-football" onclick="setSport('football')">⚽ Football</button>
+    </div>
+    <a id="dash-link" href="/dashboard?sport=horse">Accuracy dashboard →</a>
+  </div>
+
+  <div class="wrap">
+    <!-- HORSE RACING -->
+    <section id="panel-horse">
+      <div class="card">
+        <h2>Race &amp; field</h2>
+        <div class="race-grid">
+          <div><label>Venue</label><select id="h_venue"><option value="ST">Sha Tin (ST)</option><option value="HV">Happy Valley (HV)</option></select></div>
+          <div><label>Going</label><select id="h_going"><option>GOOD</option><option>GOOD TO FIRM</option><option>YIELDING</option><option>WET SLOW</option></select></div>
+          <div><label>Distance (m)</label><input id="h_distance" type="number" value="1400" /></div>
+        </div>
+        <h2>Runners</h2>
+        <div class="runner-table"><div class="runner-inner">
+          <div class="runner-head"><span>Horse name</span><span>Draw</span><span>Weight</span><span>Age</span><span>Odds</span><span>Country</span><span>Type</span><span></span></div>
+          <div id="h_runners"></div>
+        </div></div>
+        <div class="actions">
+          <button class="btn secondary" onclick="addRunner()">+ Add runner</button>
+          <button class="btn" onclick="predictHorse()">Predict winner</button>
+          <span class="count" id="h_count"></span>
+        </div>
+        <div class="status" id="h_status"></div>
+      </div>
+      <div class="card" style="margin-top:20px"><h2>Prediction</h2>
+        <div id="h_results"><div class="empty">Fill the field and hit <strong>Predict winner</strong>.</div></div>
+      </div>
+    </section>
+
+    <!-- FOOTBALL -->
+    <section id="panel-football" class="hidden">
+      <div class="card">
+        <h2>Match</h2>
+        <div class="teams">
+          <div><label>Home team</label><input id="f_home_team" value="Team A" /></div>
+          <div class="vs">vs</div>
+          <div><label>Away team</label><input id="f_away_team" value="Team B" /></div>
+        </div>
+        <div class="sec-label">Home form (last 5)</div>
+        <div class="grid">
+          <div><label>Pts/game</label><input id="f_home_form_points" type="number" step="0.1" value="2.0" /></div>
+          <div><label>Goals for</label><input id="f_home_form_gf" type="number" step="0.1" value="1.8" /></div>
+          <div><label>Goals against</label><input id="f_home_form_ga" type="number" step="0.1" value="0.9" /></div>
+          <div><label>Rank</label><input id="f_home_rank" type="number" value="3" /></div>
+        </div>
+        <div class="sec-label">Away form (last 5)</div>
+        <div class="grid">
+          <div><label>Pts/game</label><input id="f_away_form_points" type="number" step="0.1" value="1.2" /></div>
+          <div><label>Goals for</label><input id="f_away_form_gf" type="number" step="0.1" value="1.1" /></div>
+          <div><label>Goals against</label><input id="f_away_form_ga" type="number" step="0.1" value="1.4" /></div>
+          <div><label>Rank</label><input id="f_away_rank" type="number" value="11" /></div>
+        </div>
+        <div class="sec-label">Market odds</div>
+        <div class="grid">
+          <div><label>Home win</label><input id="f_home_odds" type="number" step="0.01" value="1.9" /></div>
+          <div><label>Draw</label><input id="f_draw_odds" type="number" step="0.01" value="3.5" /></div>
+          <div><label>Away win</label><input id="f_away_odds" type="number" step="0.01" value="4.2" /></div>
+        </div>
+        <button class="btn" onclick="predictFootball()">Predict outcome</button>
+        <div class="status" id="f_status"></div>
+      </div>
+      <div class="card" style="margin-top:20px"><h2>Prediction</h2>
+        <div id="f_results"><div class="empty">Fill the match and hit <strong>Predict outcome</strong>.</div></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    let sport = "horse";
+    function setSport(s){
+      sport = s;
+      document.getElementById("panel-horse").classList.toggle("hidden", s!=="horse");
+      document.getElementById("panel-football").classList.toggle("hidden", s!=="football");
+      document.getElementById("sw-horse").classList.toggle("active", s==="horse");
+      document.getElementById("sw-football").classList.toggle("active", s==="football");
+      document.getElementById("dash-link").href = "/dashboard?sport="+s;
+    }
+
+    /* ---- Horse racing ---- */
+    const COUNTRIES=["AUS","NZ","IRE","GB","USA","SAF","FR"];
+    const TYPES=["Gelding","Horse","Mare","Rig","Colt","Filly"];
+    const H_SAMPLE=[
+      {name:"Golden Sixty",draw:4,w:131,age:4,odds:2.1,c:"IRE",t:"Gelding"},
+      {name:"Beauty Generation",draw:1,w:126,age:4,odds:3.5,c:"AUS",t:"Gelding"},
+      {name:"Rattan",draw:9,w:120,age:5,odds:8.0,c:"NZ",t:"Mare"},
+    ];
+    const opts=(l,s)=>l.map(v=>`<option${v===s?" selected":""}>${v}</option>`).join("");
+    function addRunner(r={}){
+      const el=document.getElementById("h_runners");
+      const d=document.createElement("div"); d.className="runner";
+      d.innerHTML=`<input class="name" value="${r.name||""}" placeholder="Horse name"/>
+        <input class="draw" type="number" value="${r.draw??5}"/>
+        <input class="w" type="number" value="${r.w??125}"/>
+        <input class="age" type="number" value="${r.age??4}"/>
+        <input class="odds" type="number" step="0.1" value="${r.odds??6}"/>
+        <select class="c">${opts(COUNTRIES,r.c||"AUS")}</select>
+        <select class="t">${opts(TYPES,r.t||"Gelding")}</select>
+        <button class="remove">&times;</button>`;
+      d.querySelector(".remove").onclick=()=>{d.remove();hCount();};
+      el.appendChild(d); hCount();
+    }
+    function hCount(){const n=document.querySelectorAll("#h_runners .runner").length;
+      document.getElementById("h_count").textContent=n+" runner"+(n===1?"":"s");}
+    async function predictHorse(){
+      const st=document.getElementById("h_status");
+      const runners=[...document.querySelectorAll("#h_runners .runner")].map((d,i)=>({
+        name:d.querySelector(".name").value||("Horse "+(i+1)),
+        draw:+d.querySelector(".draw").value, actual_weight:+d.querySelector(".w").value,
+        horse_age:+d.querySelector(".age").value, win_odds:+d.querySelector(".odds").value,
+        horse_country:d.querySelector(".c").value, horse_type:d.querySelector(".t").value}));
+      const body={race:{venue:h_venue.value,going:h_going.value,distance:+h_distance.value},runners};
+      st.textContent="Scoring…";
+      try{const r=await fetch("/api/horse/predict",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        const data=await r.json(); if(!r.ok){st.innerHTML='<span class="error">'+(data.error||"Error")+'</span>';return;}
+        st.textContent=""; renderRanked("h_results",data,"name");
+      }catch(e){st.innerHTML='<span class="error">'+e.message+'</span>';}
+    }
+
+    /* ---- Football ---- */
+    function predictFootball(){
+      const st=document.getElementById("f_status"); st.textContent="Scoring…";
+      const g=id=>document.getElementById("f_"+id).value;
+      const body={home_team:g("home_team"),away_team:g("away_team"),
+        home_form_points:+g("home_form_points"),away_form_points:+g("away_form_points"),
+        home_form_gf:+g("home_form_gf"),home_form_ga:+g("home_form_ga"),
+        away_form_gf:+g("away_form_gf"),away_form_ga:+g("away_form_ga"),
+        home_rank:+g("home_rank"),away_rank:+g("away_rank"),
+        home_odds:+g("home_odds"),draw_odds:+g("draw_odds"),away_odds:+g("away_odds")};
+      fetch("/api/football/predict",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+        .then(r=>r.json().then(data=>({ok:r.ok,data})))
+        .then(({ok,data})=>{ if(!ok){st.innerHTML='<span class="error">'+(data.error||"Error")+'</span>';return;}
+          st.textContent=""; renderRanked("f_results",data,"name"); })
+        .catch(e=>st.innerHTML='<span class="error">'+e.message+'</span>');
+    }
+
+    function renderRanked(targetId,data,nameKey){
+      const rows=data.ranked.map(r=>{
+        const pct=(r.win_probability*100).toFixed(1); const win=r.rank===1;
+        return `<tr class="${win?'win':''}"><td class="rank">${r.rank}</td>
+          <td>${r[nameKey]||'—'}${win?'<span class="badge">Top pick</span>':''}</td>
+          <td>${r.win_odds!=null?r.win_odds:'—'}</td>
+          <td><div class="pbar"><div class="track"><i style="width:${pct}%"></i></div><span class="pv">${pct}%</span></div></td></tr>`;
+      }).join("");
+      document.getElementById(targetId).innerHTML=
+        `<table><thead><tr><th>#</th><th>Selection</th><th>Odds</th><th>Win probability</th></tr></thead><tbody>${rows}</tbody></table>
+         <div class="foot">Probabilities sum to ~100% · ML demonstration, not betting advice.</div>`;
+    }
+
+    H_SAMPLE.forEach(addRunner);
+  </script>
+</body>
+</html>

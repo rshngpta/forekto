@@ -22,3 +22,5 @@ modules/*/model/metadata.json
 .DS_Store
 .idea/
 .vscode/
+
+modules/*/data/*.db

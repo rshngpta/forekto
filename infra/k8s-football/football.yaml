@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: football
+  namespace: forekto
+  labels:
+    app.kubernetes.io/name: football
+    app.kubernetes.io/part-of: forekto
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: football
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: football
+    spec:
+      containers:
+        - name: football
+          image: forekto-football:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8081
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: football
+  namespace: forekto
+  labels:
+    app.kubernetes.io/name: football
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: football
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8081
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: football
+  namespace: forekto
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: football
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

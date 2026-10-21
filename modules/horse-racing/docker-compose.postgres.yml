@@ -1,0 +1,20 @@
+# Optional: run Postgres locally for the platform database.
+#   docker compose -f docker-compose.postgres.yml up -d
+# Then point the app at it:
+#   $env:DATABASE_URL = "postgresql://forekto:forekto@localhost:5432/forekto"   (PowerShell)
+#   export DATABASE_URL="postgresql://forekto:forekto@localhost:5432/forekto"   (bash)
+# With DATABASE_URL unset, the app uses a local SQLite file instead (zero setup).
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: forekto
+      POSTGRES_PASSWORD: forekto
+      POSTGRES_DB: forekto
+    ports:
+      - "5432:5432"
+    volumes:
+      - forekto_pgdata:/var/lib/postgresql/data
+
+volumes:
+  forekto_pgdata:
